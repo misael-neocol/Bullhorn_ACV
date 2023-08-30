@@ -241,24 +241,6 @@ export function onAfterCalculate(quoteModel, quoteLineModels) {
   });
 }
 
-// MVM
-// Function to subtract Subscription ACV from each YEAR ACV for each QL
-function subtractFromYears(): void {
-  [
-    "NEO_Year_1_ACV__c",
-    "NEO_Year_2_ACV__c",
-    "NEO_Year_3_ACV__c",
-    "NEO_Year_4_ACV__c",
-    "NEO_Year_5_ACV__c",
-  ].forEach((yearField) => {
-    if (quoteLine.record[yearField] > 0 && subscriptionACV > 0) {
-      quoteLine.record[yearField] -= subscriptionACV;
-    }
-  });
-}
-
-
-
 /**
  * MVM
  * Determines if a given QuoteLine record is the last year in its segment.
@@ -582,7 +564,7 @@ function amendmentRenewalACV(quoteModel, segmentMap) {
         previousAcv
       );
 
-      setACVOnLine(qlSegment, qlSegment.record.SBQQ__SegmentIndex__c, finalACV);
+      // setACVOnLine(qlSegment, qlSegment.record.SBQQ__SegmentIndex__c, finalACV);
 
       previousQuoteLine = qlSegment;
     });
@@ -614,6 +596,7 @@ function inheritOverrideFromFirstSegment(segmentMap) {
     });
   });
 }
+
 function netNewACV(segmentMap) {
   segmentMap.forEach((segmentArray) => {
     //Sort based on segment index - asc
@@ -657,16 +640,16 @@ function netNewACV(segmentMap) {
       log("runningACV", runningACVTotal);
       log("final ACV: ", qlSegment.record.SBQQ__SegmentIndex__c, acv);
       //Since this is field specific instead of a generic field, this passes to this function to just assign the correct field with the correct info
-      setACVOnLine(qlSegment, qlSegment.record.SBQQ__SegmentIndex__c, acv);
+      // setACVOnLine(qlSegment, qlSegment.record.SBQQ__SegmentIndex__c, acv);
       //Check to make sure that the array is greater than 1 to see if we even need to bother with the stub
       if (qlSegment.record.SBQQ__SegmentIndex__c == segmentArray.length) {
         const stubACV =
           mrr * 12 - runningACVTotal != 0 ? mrr * 12 - runningACVTotal : null;
-        setACVOnLine(
-          qlSegment,
-          qlSegment.record.SBQQ__SegmentIndex__c + 1,
-          stubACV
-        );
+        // setACVOnLine(
+        //   qlSegment,
+        //   qlSegment.record.SBQQ__SegmentIndex__c + 1,
+        //   stubACV
+        // );
       }
 
       //Set this line to our ref to be used in the next loop
