@@ -179,12 +179,17 @@ var previousOffset = previousQuoteLine != null ? previousQuoteLine.record.NEO_Of
 var subscriptionACV = subACV != null ? qlSegment.record.NEO_Subscription_ACV__c : 0;
 //Final ACV
 var finalACV = 0;
-//Specific math for segment 1
-if (qlSegment.record.SBQQ__SegmentIndex__c == 1) {
-//ACV Calc:
-finalACV = (mrr * quantity * (12 - offsetMonths) + (mrr * qlSegment.record.NEO_Subscription_Prior_Quantity__c * offsetMonths)) - subscriptionACV;
-}
 
+//Specific math for segment 1 on amendment/replacement lines
+if (qlSegment.record.SBQQ__SegmentIndex__c == 1 && qlSegment.record.Original_Subscription__c != null) {
+//ACV Calc:
+finalACV = ((mrr * quantity * (12 - offsetMonths)) + (mrr * qlSegment.record.NEO_Subscription_Prior_Quantity__c * offsetMonths)) - subscriptionACV;
+}
+//Specific math for segment 1 on renewal lines
+if (qlSegment.record.SBQQ__SegmentIndex__c == 1 && qlSegment.record.SBQQ__RenewedSubscription__c != null) {
+    //ACV Calc:
+    finalACV = ((mrr * quantity * (12 - offsetMonths)) + (qlSegment.record.NEO_Renewed_Monthly_Net_Unit_Price__c * qlSegment.record.NEO_Subscription_Prior_Quantity__c * offsetMonths)) - subscriptionACV;
+    }
 //we want to do a different ACV calc for renewal quote lines on years 2+
 if ((qlSegment.record.SBQQ__SegmentIndex__c > 1) && (qlSegment.record.SBQQ__RenewedSubscription__c != null)) {
 
@@ -370,6 +375,7 @@ NEO_Subscription_ACV__c
 SBQQ__UpgradedSubscription__c
 SBQQ__RenewedSubscription__c
 NEO_Monthly_Net_Unit_Price_Primary__c
+NEO_Renewed_Monthly_Net_Unit_Price__c
 NEO_Monthly_Net_Unit_Price_Primary_c
 NEO_Previous_Segment_MRR__c
 NEO_Subsequent_Segments_MRR_Additional__c

@@ -187,54 +187,34 @@ export function onAfterCalculate(quoteModel, quoteLineModels) {
     // Create a map to group quoteLines by SBQQ__SegmentKey__c
     const segmentKeyMap = new Map();
 
-    // Populate the segmentKeyMap
+    
     quoteLineModels.forEach((quoteLine) => {
+      console.log("onAfterCalculate>forEach: ", quoteLine.id, quoteLine.SBQQ__SegmentIndex__c)
+
       const key = quoteLine.record.SBQQ__SegmentKey__c;
+
       if (!segmentKeyMap.has(key)) {
         segmentKeyMap.set(key, []);
       }
       segmentKeyMap.get(key).push(quoteLine);
 
-      // MVM
-      // For amendments, subtract Subscription ACV for all years
-      if (quoteLine.record.SBQQ__UpgradedSubscription__c) {
-        //   mvm_commented
-        // subtractFromYears();
-      }
+      const quoteType = determineQuoteType(quoteLine[0].record, quoteModel.record);
 
-      // For renewals, only subtract from year 1
-      if (quoteLine.record.SBQQ__RenewedSubscription__c) {
-        if (quoteLine.record.NEO_Year_1_ACV__c > 0 && subscriptionACV > 0) {
-            //   mvm_commented
-        //   quoteLine.record.NEO_Year_1_ACV__c -= subscriptionACV;
+       // Process each group of quoteLines based on QuoteType
+      segmentKeyMap.forEach((quoteLine, key) => {
+        
+
+        switch (quoteType) {
+          case "Net New":
+              calculateNetNewACV(quoteLine);
+              break;
+
+          case "Amendment":
+              calculateAmendmentACV(quoteLine);
+              break;
+          // ... [other cases for other QuoteTypes]
         }
-      }
-
-      // For replacements, subtract Subscription ACV for all years
-      if (
-        quoteLine.record.Original_Subscription__c &&
-        quoteModel.record.Amendment_Quote_Type__c === "Replacement Quote"
-      ) {
-        //   mvm_commented
-        // subtractFromYears();
-      }
-
-    });
-
-    // Process each group of quoteLines based on QuoteType
-    segmentKeyMap.forEach((quoteLines, key) => {
-      const quoteType = determineQuoteType(quoteLines[0].record, quoteModel.record);
-
-      switch (quoteType) {
-        case "Net New":
-            calculateNetNewACV(quoteLines);
-            break;
-
-        case "Amendment":
-            calculateAmendmentACV(quoteLines);
-            break;
-        // ... [other cases for other QuoteTypes]
-      }
+      });
     });
 
     resolve("");
@@ -249,12 +229,23 @@ export function onAfterCalculate(quoteModel, quoteLineModels) {
  * @returns {boolean} - Returns true if the QuoteLine is the last year, otherwise false.
  */
 function isLastYear(quoteLine, allQuoteLines) {
-    // Find the highest segment index for the given segment key
-    const maxSegmentIndex = Math.max(...allQuoteLines.filter(line => line.SBQQ__SegmentKey__c === quoteLine.SBQQ__SegmentKey__c).map(line => line.SBQQ__SegmentIndex__c));
+  if (!quoteLine || !allQuoteLines || allQuoteLines.length === 0) {
+      console.error('Invalid input to isLastYear:', { quoteLine, allQuoteLines });
+      return false;
+  }
 
-    // Check if the quoteLine has the highest segment index and NEO_Offset_Months__c is greater than 0
-    return quoteLine.SBQQ__SegmentIndex__c === maxSegmentIndex && quoteLine.NEO_Offset_Months__c > 0;
+  const filteredLines = allQuoteLines.filter(line => line && line.SBQQ__SegmentKey__c === quoteLine.SBQQ__SegmentKey__c);
+  
+  if (filteredLines.length === 0) {
+      console.error('No matching lines found for segment key:', quoteLine.SBQQ__SegmentKey__c);
+      return false;
+  }
+
+  const maxSegmentIndex = Math.max(...filteredLines.map(line => line.SBQQ__SegmentIndex__c));
+
+  return quoteLine.SBQQ__SegmentIndex__c === maxSegmentIndex && quoteLine.NEO_Offset_Months__c > 0;
 }
+
 // MVM 123
 function determineQuoteType(quoteLine, quoteModel) {
     // Net New scenario
@@ -343,6 +334,8 @@ function calculateAmendmentACV(quoteLines) {
       for (const quoteLine of quoteLines) {
           const segmentIndex = quoteLine.SBQQ__SegmentIndex__c;
 
+          console.log("calculateAmendmentACV>TRY>FOR: ", quoteLine.id, quoteLine.SBQQ__SegmentIndex__c)
+
           // Check for valid segmentIndex and quoteLine
           if (typeof segmentIndex !== 'number' || isNaN(segmentIndex)) {
               console.error("Invalid segmentIndex for quoteLine:", quoteLine);
@@ -379,6 +372,7 @@ function calculateAmendmentACV(quoteLines) {
       }
 
       const lastSegment = quoteLines[quoteLines.length - 1];  // Last item in the list
+      console.log("lastSegment_amend: ", lastSegment.id)
       if (isLastYear(lastSegment)) {
           const nextSegmentIndex = lastSegment.SBQQ__SegmentIndex__c + 1;
 
