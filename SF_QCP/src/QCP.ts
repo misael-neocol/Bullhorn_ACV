@@ -3,7 +3,15 @@ export function onAfterCalculate(quoteModel, quoteLineModels, conn) {
   return new Promise((resolve, reject) => {
     console.log("onAfterCalculate");
 
-    // MVM
+    calculateACV(quoteLineModels,quoteModel, conn);
+
+    resolve("");
+  });
+}
+
+// MVM
+function calculateACV(quoteLineModels,quoteModel, conn){
+  // MVM
     // Create a map to group quoteLines by SBQQ__SegmentKey__c
     const segmentKeyGroups = new Map();
 
@@ -82,9 +90,6 @@ export function onAfterCalculate(quoteModel, quoteLineModels, conn) {
 
       }
     });
-
-    resolve("");
-  });
 }
 
 // MVM
