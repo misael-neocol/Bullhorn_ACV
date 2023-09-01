@@ -33,206 +33,161 @@ export function isFieldEditableForObject(fieldName, record, conn, objectName) {
 
 export function onAfterCalculate(quoteModel, quoteLineModels) {
   return new Promise((resolve, reject) => {
+
+    quoteLineModels.forEach(quoteLine => {
+      //filter out non-segmented products for all
+      if (quoteLine.record.SBQQ__SegmentKey__c === '1692206669782') {
+        console.log("mvm__Top__quoteLineID: ", quoteLine.record.Id);
+        console.log("mvm__Top__NEO_Monthly_Net_Unit_Price_Primary__c: ", quoteLine.record.NEO_Monthly_Net_Unit_Price_Primary__c);
+      }
+    });
+
     //Set up a map to work through segments, makes dealing with segments per line easier
     //These are split out in case future modifications need to be made on a per type basis
     const netNewSegmentMap = new Map();
     const amendmentRenewalSegmentMap = new Map();
     const overrideSegmentMap = new Map();
 
-    //copy & pasted below code to first loop through & default override
+    //copy & pasted below code to first loop through & default override 
     //Loop quote lines and assign to map by segment key
-    quoteLineModels.forEach((quoteLine) => {
+    quoteLineModels.forEach(quoteLine => {
       //filter out non-segmented products for all
       if (quoteLine.record.SBQQ__SegmentKey__c != null) {
         if (!overrideSegmentMap.has(quoteLine.record.SBQQ__SegmentKey__c)) {
-          overrideSegmentMap.set(
-            quoteLine.record.SBQQ__SegmentKey__c,
-            []
-          );
+          overrideSegmentMap.set(quoteLine.record.SBQQ__SegmentKey__c, []);
         }
-        overrideSegmentMap
-          .get(quoteLine.record.SBQQ__SegmentKey__c)
-          .push(quoteLine);
+        overrideSegmentMap.get(quoteLine.record.SBQQ__SegmentKey__c).push(quoteLine);
       }
-
-      // Extract the Subscription ACV for easier reference
-      const subscriptionACV = quoteLine.record.NEO_Subscription_ACV__c;
     });
-
-    
     if (overrideSegmentMap.size > 0) {
-      overrideSegmentMap.forEach((overrideSegmentArray) => {
+      overrideSegmentMap.forEach(overrideSegmentArray => {
         let previousQuoteLineOverride;
         //This really shouldn't necessarily be required and is more of a failsafe - lines should be coming in 'pre-sorted' by CPQ in a sequence that should work for us when mapping the original segment map
-        overrideSegmentArray.sort(
-          (a, b) =>
-            a.record.SBQQ__SegmentIndex__c - b.record.SBQQ__SegmentIndex__c
-        );
-        overrideSegmentArray.forEach((qlSegment) => {
+        overrideSegmentArray.sort((a, b) => a.record.SBQQ__SegmentIndex__c - b.record.SBQQ__SegmentIndex__c);
+        overrideSegmentArray.forEach(qlSegment => {
           if (previousQuoteLineOverride != null) {
             if (validateHWR(quoteModel, qlSegment, previousQuoteLineOverride)) {
               //Throw an error provided all of this is satisfied
               reject(
-                "You’ve attempted to save a quote where year 2+ has a lower quantity than year 1. Only Power Users may save with this criteria. Please adjust the quantity and save again"
+                'You’ve attempted to save a quote where year 2+ has a lower quantity than year 1. Only Power Users may save with this criteria. Please adjust the quantity and save again',
               );
             }
           }
           previousQuoteLineOverride = qlSegment;
         });
       });
-    //   mvm_commented
-    //   inheritOverrideFromFirstSegment(overrideSegmentMap);
+      inheritOverrideFromFirstSegment(overrideSegmentMap);
     }
 
     //continuing with unmodified code
     //Loop quote lines and assign to map by segment key
-    quoteLineModels.forEach((quoteLine) => {
+    quoteLineModels.forEach(quoteLine => {
       //filter out non-segmented products for all
-      if (
-        quoteLine.record.SBQQ__SegmentKey__c != null &&
-        !quoteLine.record.NEO_Override_ACV__c
-      ) {
+      if (quoteLine.record.SBQQ__SegmentKey__c != null && !quoteLine.record.NEO_Override_ACV__c) {
         //Reset ACV's for a clean calc
-        //   mvm_commented
-        // resetLine(quoteLine);
+        resetLine(quoteLine);
         //Net new map assign
-        if (
-          quoteLine.record.SBQQ__UpgradedSubscription__c == null &&
-          quoteLine.record.SBQQ__RenewedSubscription__c == null
-        ) {
+        if (quoteLine.record.Original_Subscription__c == null && quoteLine.record.SBQQ__RenewedSubscription__c == null) {
           if (!netNewSegmentMap.has(quoteLine.record.SBQQ__SegmentKey__c)) {
-            netNewSegmentMap.set(
-              quoteLine.record.SBQQ__SegmentKey__c,
-              []
-            );
+            netNewSegmentMap.set(quoteLine.record.SBQQ__SegmentKey__c, []);
           }
-          netNewSegmentMap
-            .get(quoteLine.record.SBQQ__SegmentKey__c)
-            .push(quoteLine);
+          netNewSegmentMap.get(quoteLine.record.SBQQ__SegmentKey__c).push(quoteLine);
         }
         //Amendment map assign
-        if (
-          quoteLine.record.Original_Subscription__c != null ||
-          quoteLine.record.SBQQ__RenewedSubscription__c != null
-        ) {
-          if (
-            !amendmentRenewalSegmentMap.has(
-              quoteLine.record.SBQQ__SegmentKey__c
-            )
-          ) {
-            amendmentRenewalSegmentMap.set(
-              quoteLine.record.SBQQ__SegmentKey__c,
-              []
-            );
+        if (quoteLine.record.Original_Subscription__c != null || quoteLine.record.SBQQ__RenewedSubscription__c != null) {
+          if (!amendmentRenewalSegmentMap.has(quoteLine.record.SBQQ__SegmentKey__c)) {
+            amendmentRenewalSegmentMap.set(quoteLine.record.SBQQ__SegmentKey__c, []);
           }
-          amendmentRenewalSegmentMap
-            .get(quoteLine.record.SBQQ__SegmentKey__c)
-            .push(quoteLine);
+          amendmentRenewalSegmentMap.get(quoteLine.record.SBQQ__SegmentKey__c).push(quoteLine);
         }
       }
     });
     //Run intiial hwm product quantity validation - we have to run this on all sides - net new, amendment, and renewal - but it will only run for what is populated on the quote
     //Run net new
     if (netNewSegmentMap.size > 0) {
-      netNewSegmentMap.forEach((netNewSegmentArray) => {
+      netNewSegmentMap.forEach(netNewSegmentArray => {
         let previousQuoteLine;
         //This really shouldn't necessarily be required and is more of a failsafe - lines should be coming in 'pre-sorted' by CPQ in a sequence that should work for us when mapping the original segment map
-        netNewSegmentArray.sort(
-          (a, b) =>
-            a.record.SBQQ__SegmentIndex__c - b.record.SBQQ__SegmentIndex__c
-        );
-        netNewSegmentArray.forEach((qlSegment) => {
+        netNewSegmentArray.sort((a, b) => a.record.SBQQ__SegmentIndex__c - b.record.SBQQ__SegmentIndex__c);
+        netNewSegmentArray.forEach(qlSegment => {
           if (previousQuoteLine != null) {
             if (validateHWR(quoteModel, qlSegment, previousQuoteLine)) {
               //Throw an error provided all of this is satisfied
               reject(
-                "You’ve attempted to save a quote where year 2+ has a lower quantity than year 1. Only Power Users may save with this criteria. Please adjust the quantity and save again"
+                'You’ve attempted to save a quote where year 2+ has a lower quantity than year 1. Only Power Users may save with this criteria. Please adjust the quantity and save again',
               );
             }
           }
           previousQuoteLine = qlSegment;
         });
       });
-      //   mvm_commented
-    //   inheritValuesFromFirstSegment(netNewSegmentMap);
-    //   netNewACV(netNewSegmentMap);
+      inheritValuesFromFirstSegment(netNewSegmentMap);
+      netNewACV(netNewSegmentMap);
     }
     //Run amendment/renewal
     if (amendmentRenewalSegmentMap.size > 0) {
-      amendmentRenewalSegmentMap.forEach((amendmentRenewalSegmentArray) => {
+      amendmentRenewalSegmentMap.forEach(amendmentRenewalSegmentArray => {
         let previousQuoteLine;
         //This really shouldn't necessarily be required and is more of a failsafe - lines should be coming in 'pre-sorted' by CPQ in a sequence that should work for us when mapping the original segment map
-        amendmentRenewalSegmentArray.sort(
-          (a, b) =>
-            a.record.SBQQ__SegmentIndex__c - b.record.SBQQ__SegmentIndex__c
-        );
-        amendmentRenewalSegmentArray.forEach((qlSegment) => {
+        amendmentRenewalSegmentArray.sort((a, b) => a.record.SBQQ__SegmentIndex__c - b.record.SBQQ__SegmentIndex__c);
+        amendmentRenewalSegmentArray.forEach(qlSegment => {
           if (previousQuoteLine != null) {
             if (validateHWR(quoteModel, qlSegment, previousQuoteLine)) {
               //Throw an error provided all of this is satisfied
               reject(
-                "You’ve attempted to save a quote where year 2+ has a lower quantity than year 1. Only Power Users may save with this criteria. Please adjust the quantity and save again"
+                'You’ve attempted to save a quote where year 2+ has a lower quantity than year 1. Only Power Users may save with this criteria. Please adjust the quantity and save again',
               );
             }
           }
           previousQuoteLine = qlSegment;
         });
-      //   mvm_commented
-    //   inheritValuesFromFirstSegment(amendmentRenewalSegmentMap);
-    //   amendmentRenewalACV(quoteModel, amendmentRenewalSegmentMap);
-    });
-  }
+      });
+      inheritValuesFromFirstSegment(amendmentRenewalSegmentMap);
+      amendmentRenewalACV(quoteModel, amendmentRenewalSegmentMap);
+    }
 
     // MVM
+    console.log("onAfterCalculate__ACV-Start__quoteLineModels[0].SBQQ__Product__c: ", quoteLineModels[0].record.SBQQ__Product__c);
+
     // Create a map to group quoteLines by SBQQ__SegmentKey__c
-    const segmentKeyMap = new Map();
+    const segmentKeyGroups = new Map();
 
-    // Populate the segmentKeyMap
+    // Loop through quoteLineModels and assign to segmentKeyGroups by SBQQ__SegmentKey__c
     quoteLineModels.forEach((quoteLine) => {
-      const key = quoteLine.record.SBQQ__SegmentKey__c;
-      if (!segmentKeyMap.has(key)) {
-        segmentKeyMap.set(key, []);
-      }
-      segmentKeyMap.get(key).push(quoteLine);
+      const segmentKey = quoteLine.record.SBQQ__SegmentKey__c;
+      const segmentIndex = quoteLine.record.SBQQ__SegmentIndex__c;
 
-      // MVM
-      // For amendments, subtract Subscription ACV for all years
-      if (quoteLine.record.SBQQ__UpgradedSubscription__c) {
-        //   mvm_commented
-        // subtractFromYears();
-      }
 
-      // For renewals, only subtract from year 1
-      if (quoteLine.record.SBQQ__RenewedSubscription__c) {
-        if (quoteLine.record.NEO_Year_1_ACV__c > 0 && subscriptionACV > 0) {
-            //   mvm_commented
-        //   quoteLine.record.NEO_Year_1_ACV__c -= subscriptionACV;
+      // Check if the quoteLine has a valid segmentKey and segmentIndex
+      if (segmentKey != null && segmentIndex != null) {
+        if (!segmentKeyGroups.has(segmentKey)) {
+          segmentKeyGroups.set(segmentKey, []);
         }
+        segmentKeyGroups.get(segmentKey).push(quoteLine);
       }
-
-      // For replacements, subtract Subscription ACV for all years
-      if (
-        quoteLine.record.Original_Subscription__c &&
-        quoteModel.record.Amendment_Quote_Type__c === "Replacement Quote"
-      ) {
-        //   mvm_commented
-        // subtractFromYears();
-      }
-
     });
 
-    // Process each group of quoteLines based on QuoteType
-    segmentKeyMap.forEach((quoteLines, key) => {
-      const quoteType = determineQuoteType(quoteLines[0].record, quoteModel.record);
+    console.log("onAfterCalculate__segmentKeyGroups: ", segmentKeyGroups);
 
+    // Now, for each group of quoteLines with the same SBQQ__SegmentKey__c
+    segmentKeyGroups.forEach((quoteLinesGroup, segmentKey) => {
+      console.log("onAfterCalculate__segmentKeyGroups__quoteLinesGroup[0].record, quoteModel.record: ", quoteLinesGroup[0].record, quoteModel.record);
+
+      // Test one of the lines using the determineQuoteType function
+      const quoteType = determineQuoteType(quoteLinesGroup[0].record, quoteModel.record);
+
+      console.log("onAfterCalculate__segmentKeyGroups__quoteType: ", quoteType);
+
+      // Based on the result, send all the lines to the appropriate calculateACV function
       switch (quoteType) {
         case "Net New":
-            calculateNetNewACV(quoteLines);
-            break;
+          calculateNetNewACV(quoteLinesGroup);
+          break;
 
         case "Amendment":
-            calculateAmendmentACV(quoteLines);
-            break;
+          calculateAmendmentACV(quoteLinesGroup);
+          break;
+
         // ... [other cases for other QuoteTypes]
       }
     });
@@ -249,150 +204,175 @@ export function onAfterCalculate(quoteModel, quoteLineModels) {
  * @returns {boolean} - Returns true if the QuoteLine is the last year, otherwise false.
  */
 function isLastYear(quoteLine, allQuoteLines) {
-    // Find the highest segment index for the given segment key
-    const maxSegmentIndex = Math.max(...allQuoteLines.filter(line => line.SBQQ__SegmentKey__c === quoteLine.SBQQ__SegmentKey__c).map(line => line.SBQQ__SegmentIndex__c));
+  if (!quoteLine || !allQuoteLines || allQuoteLines.length === 0) {
+    console.error('Invalid input to isLastYear:', { quoteLine, allQuoteLines });
+    return false;
+  }
 
-    // Check if the quoteLine has the highest segment index and NEO_Offset_Months__c is greater than 0
-    return quoteLine.SBQQ__SegmentIndex__c === maxSegmentIndex && quoteLine.NEO_Offset_Months__c > 0;
+  const filteredLines = allQuoteLines.filter(line => line && line.SBQQ__SegmentKey__c === quoteLine.SBQQ__SegmentKey__c);
+
+  if (filteredLines.length === 0) {
+    console.error('No matching lines found for segment key:', quoteLine.SBQQ__SegmentKey__c);
+    return false;
+  }
+
+  const maxSegmentIndex = Math.max(...filteredLines.map(line => line.SBQQ__SegmentIndex__c));
+
+  return quoteLine.SBQQ__SegmentIndex__c === maxSegmentIndex && quoteLine.NEO_Offset_Months__c > 0;
 }
+
 // MVM 123
 function determineQuoteType(quoteLine, quoteModel) {
-    // Net New scenario
-    if (!quoteLine.SBQQ__RenewedSubscription__c && !quoteLine.SBQQ__UpgradedSubscription__c && !quoteLine.Original_Subscription__c) {
-        return "Net New";
-    }
-    
-    // Amendment scenario
-    else if (!quoteLine.SBQQ__RenewedSubscription__c && quoteLine.SBQQ__UpgradedSubscription__c && quoteLine.Original_Subscription__c) {
-        return "Amendment";
-    }
-    
-    // Renewal scenario
-    else if (quoteLine.SBQQ__RenewedSubscription__c && !quoteLine.SBQQ__UpgradedSubscription__c && quoteLine.Original_Subscription__c) {
-        return "Renewal";
-    }
-    
-    // Cancel And Renewal - REPLACEMENT scenario
-    else if (!quoteLine.SBQQ__RenewedSubscription__c && !quoteLine.SBQQ__UpgradedSubscription__c && quoteLine.Original_Subscription__c && quoteModel.Amendment_Quote_Type__c === "Replacement Quote") {
-        return "Cancel And Renewal - REPLACEMENT";
-    }
-    
-    // Cancel And Renewal - CANCELATION scenario
-    else if (!quoteLine.SBQQ__RenewedSubscription__c && !quoteLine.SBQQ__UpgradedSubscription__c && quoteLine.Original_Subscription__c && quoteModel.Amendment_Quote_Type__c === "Cancelled and Replaced Quote") {
-        return "Cancel And Renewal - CANCELATION";
-    }
-    
-    // Unknown scenario
-    else {
-        return "Unknown";
-    }
+  // Net New scenario
+  if (!quoteLine.SBQQ__RenewedSubscription__c && !quoteLine.SBQQ__UpgradedSubscription__c && !quoteLine.Original_Subscription__c) {
+    return "Net New";
   }
+
+  // Amendment scenario
+  else if (!quoteLine.SBQQ__RenewedSubscription__c && quoteLine.SBQQ__UpgradedSubscription__c && quoteLine.Original_Subscription__c) {
+    return "Amendment";
+  }
+
+  // Renewal scenario
+  else if (quoteLine.SBQQ__RenewedSubscription__c && !quoteLine.SBQQ__UpgradedSubscription__c && quoteLine.Original_Subscription__c) {
+    return "Renewal";
+  }
+
+  // Cancel And Renewal - REPLACEMENT scenario
+  else if (!quoteLine.SBQQ__RenewedSubscription__c && !quoteLine.SBQQ__UpgradedSubscription__c && quoteLine.Original_Subscription__c && quoteModel.Amendment_Quote_Type__c === "Replacement Quote") {
+    return "Cancel And Renewal - REPLACEMENT";
+  }
+
+  // Cancel And Renewal - CANCELATION scenario
+  else if (!quoteLine.SBQQ__RenewedSubscription__c && !quoteLine.SBQQ__UpgradedSubscription__c && quoteLine.Original_Subscription__c && quoteModel.Amendment_Quote_Type__c === "Cancelled and Replaced Quote") {
+    return "Cancel And Renewal - CANCELATION";
+  }
+
+  // Unknown scenario
+  else {
+    return "Unknown";
+  }
+}
 
 // MVM
 function calculateNetNewACV(quoteLines) {
   // Assuming quoteLines is a list of QuoteLine records with the same SBQQ__SegmentKey__c
 
   // Sort quoteLines by SBQQ__SegmentIndex__c if not already sorted
-  quoteLines.sort((a, b) => a.SBQQ__SegmentIndex__c - b.SBQQ__SegmentIndex__c);    
+  quoteLines.sort((a, b) => a.SBQQ__SegmentIndex__c - b.SBQQ__SegmentIndex__c);
 
   // Initialize a variable to store the cumulative ACV from previous segments
   let cumulativeACV = 0;
 
   for (const quoteLine of quoteLines) {
-      const segmentIndex = quoteLine.SBQQ__SegmentIndex__c;
-      if (segmentIndex === 1) {
-          quoteLine.NEO_Year_1_ACV__c = quoteLine.NEO_Monthly_Net_Unit_Price_Primary__c * quoteLine.SBQQ__Quantity__c * (12 - quoteLine.NEO_Offset_Months__c);
-          cumulativeACV += quoteLine.NEO_Year_1_ACV__c;
-      } else {
-          // Calculate the ACV for this segment
-          const currentACV = (quoteLine.NEO_Monthly_Net_Unit_Price_Primary__c * quoteLine.SBQQ__Quantity__c * (12 - quoteLine.NEO_Offset_Months__c)) 
-                      + (quoteLines[segmentIndex - 1].NEO_Monthly_Net_Unit_Price_Primary__c * quoteLines[segmentIndex - 1].SBQQ__Quantity__c * quoteLines[segmentIndex - 1].NEO_Offset_Months__c) 
-                      - cumulativeACV;
+    const segmentIndex = quoteLine.SBQQ__SegmentIndex__c;
+    if (segmentIndex === 1) {
+      quoteLine.NEO_Year_1_ACV__c = quoteLine.NEO_Monthly_Net_Unit_Price_Primary__c * quoteLine.SBQQ__Quantity__c * (12 - quoteLine.NEO_Offset_Months__c);
+      cumulativeACV += quoteLine.NEO_Year_1_ACV__c;
+    } else {
+      // Calculate the ACV for this segment
+      const currentACV = (quoteLine.NEO_Monthly_Net_Unit_Price_Primary__c * quoteLine.SBQQ__Quantity__c * (12 - quoteLine.NEO_Offset_Months__c))
+        + (quoteLines[segmentIndex - 1].NEO_Monthly_Net_Unit_Price_Primary__c * quoteLines[segmentIndex - 1].SBQQ__Quantity__c * quoteLines[segmentIndex - 1].NEO_Offset_Months__c)
+        - cumulativeACV;
 
-          if (nextSegmentIndex <= 5) {
-              // Assign the calculated ACV to the appropriate field based on segmentIndex
-              quoteLine["NEO_Year_" + segmentIndex + "_ACV__c"] = currentACV;
-          }
-
-          // Update the cumulativeACV
-          cumulativeACV += currentACV;
+      if (nextSegmentIndex <= 5) {
+        // Assign the calculated ACV to the appropriate field based on segmentIndex
+        quoteLine["NEO_Year_" + segmentIndex + "_ACV__c"] = currentACV;
       }
+
+      // Update the cumulativeACV
+      cumulativeACV += currentACV;
+    }
   }
 
   // Handle the last year logic if applicable
   const lastSegment = quoteLines[quoteLines.length - 1];  // Last item in the list
   if (isLastYear(lastSegment)) {
-      const nextSegmentIndex = lastSegment.SBQQ__SegmentIndex__c + 1;
-      
-      if (nextSegmentIndex <= 5) {
-          const fieldName = "NEO_Year_" + nextSegmentIndex + "_ACV__c";
-          lastSegment[fieldName] = (lastSegment.NEO_Monthly_Net_Unit_Price_Primary__c * 12 * lastSegment.SBQQ__Quantity__c) - cumulativeACV;
-      }
+    const nextSegmentIndex = lastSegment.SBQQ__SegmentIndex__c + 1;
+
+    if (nextSegmentIndex <= 5) {
+      const fieldName = "NEO_Year_" + nextSegmentIndex + "_ACV__c";
+      lastSegment[fieldName] = (lastSegment.NEO_Monthly_Net_Unit_Price_Primary__c * 12 * lastSegment.SBQQ__Quantity__c) - cumulativeACV;
+    }
   }
 }
 
 // MVM
 function calculateAmendmentACV(quoteLines) {
   try {
-      // Sort quoteLines by SBQQ__SegmentIndex__c if not already sorted
-      quoteLines.sort((a, b) => a.SBQQ__SegmentIndex__c - b.SBQQ__SegmentIndex__c);
+    // Sort quoteLines by SBQQ__SegmentIndex__c if not already sorted
+    quoteLines.sort((a, b) => a.record.SBQQ__SegmentIndex__c - b.record.SBQQ__SegmentIndex__c);
 
-      // Initialize a variable to store the cumulative ACV from previous segments
-      let cumulativeACV = 0;
+    // Initialize a variable to store the cumulative ACV from previous segments
+    let cumulativeACV = 0;
 
-      for (const quoteLine of quoteLines) {
-          const segmentIndex = quoteLine.SBQQ__SegmentIndex__c;
+    for (const quoteLine of quoteLines) {
+      const segmentIndex = quoteLine.record.SBQQ__SegmentIndex__c;
 
-          // Check for valid segmentIndex and quoteLine
-          if (typeof segmentIndex !== 'number' || isNaN(segmentIndex)) {
-              console.error("Invalid segmentIndex for quoteLine:", quoteLine);
-              continue; // Skip processing this quoteLine
-          }
+      console.log("calculateAmendmentACV__segmentIndex: ", segmentIndex);
 
-          console.log("Processing quoteLine with segmentIndex:", segmentIndex, quoteLine);
-
-          if (segmentIndex === 1) {
-              quoteLine.NEO_Year_1_ACV__c = (quoteLine.NEO_Monthly_Net_Unit_Price_Primary__c * quoteLine.SBQQ__Quantity__c * (12 - quoteLine.NEO_Offset_Months__c))
-                  + (quoteLine.NEO_Monthly_Net_Unit_Price_Primary__c * quoteLine.SBQQ__PriorQuantity__c * quoteLine.NEO_Offset_Months__c)
-                  - quoteLine.NEO_Subscription_ACV__c;
-              cumulativeACV += quoteLine.NEO_Year_1_ACV__c;
-          } else {
-              const previousSegment = quoteLines[segmentIndex - 1];
-              if (!previousSegment) {
-                  throw new Error(`Previous segment is undefined for segmentIndex ${segmentIndex}`);
-              }
-
-              // Calculate the ACV for this segment
-              const currentACV = (quoteLine.NEO_Monthly_Net_Unit_Price_Primary__c * quoteLine.SBQQ__Quantity__c * (12 - quoteLine.NEO_Offset_Months__c))
-                  + (previousSegment.NEO_Monthly_Net_Unit_Price_Primary__c * previousSegment.SBQQ__Quantity__c * previousSegment.NEO_Offset_Months__c)
-                  - quoteLine.NEO_Subscription_ACV__c
-                  - cumulativeACV;
-
-              if (segmentIndex <= 5) {
-                  // Assign the calculated ACV to the appropriate field based on segmentIndex
-                  quoteLine["NEO_Year_" + segmentIndex + "_ACV__c"] = currentACV;
-              }
-
-              // Update the cumulativeACV
-              cumulativeACV += currentACV;
-          }
+      // Check for valid segmentIndex and quoteLine
+      if (typeof segmentIndex !== 'number' || isNaN(segmentIndex)) {
+        console.error("Invalid segmentIndex for quoteLine:", quoteLine);
+        continue; // Skip processing this quoteLine
       }
 
-      const lastSegment = quoteLines[quoteLines.length - 1];  // Last item in the list
-      if (isLastYear(lastSegment)) {
-          const nextSegmentIndex = lastSegment.SBQQ__SegmentIndex__c + 1;
+      console.log("quoteLineID: ", quoteLine.record.Id);
+      console.log("NEO_Monthly_Net_Unit_Price_Primary__c: ", quoteLine.record.NEO_Monthly_Net_Unit_Price_Primary__c);
+      console.log("SBQQ__Quantity__c: ", quoteLine.record.SBQQ__Quantity__c);
+      console.log("SBQQ__PriorQuantity__c: ", quoteLine.record.SBQQ__PriorQuantity__c);
+      console.log("NEO_Offset_Months__c: ", quoteLine.record.NEO_Offset_Months__c);
+      console.log("NEO_Subscription_ACV__c: ", quoteLine.record.NEO_Subscription_ACV__c); 
+      console.log("SBQQ__SegmentKey__c: ", quoteLine.record.SBQQ__SegmentKey__c);
 
-          if (nextSegmentIndex <= 5) {
-              const fieldName = "NEO_Year_" + nextSegmentIndex + "_ACV__c";
-              lastSegment[fieldName] = (lastSegment.NEO_Monthly_Net_Unit_Price_Primary__c * 12 * lastSegment.SBQQ__Quantity__c) - lastSegment.NEO_Subscription_ACV__c - cumulativeACV;
-          }
+      if (segmentIndex === 1) {
+
+        quoteLine.record.NEO_Year_1_ACV__c = (quoteLine.record.NEO_Monthly_Net_Unit_Price_Primary__c * quoteLine.record.SBQQ__Quantity__c * (12 - quoteLine.record.NEO_Offset_Months__c))
+          + (quoteLine.record.NEO_Monthly_Net_Unit_Price_Primary__c * quoteLine.record.SBQQ__PriorQuantity__c * quoteLine.record.NEO_Offset_Months__c)
+          - quoteLine.record.NEO_Subscription_ACV__c;
+
+        cumulativeACV += quoteLine.record.NEO_Year_1_ACV__c;
+      } else {
+        const previousSegment = quoteLines[segmentIndex - 1];
+        if (!previousSegment) {
+          throw new Error(`Previous segment is undefined for segmentIndex ${segmentIndex}`);
+        }
+
+        // Calculate the ACV for this segment
+        const currentACV = (quoteLine.record.NEO_Monthly_Net_Unit_Price_Primary__c * quoteLine.record.SBQQ__Quantity__c * (12 - quoteLine.record.NEO_Offset_Months__c))
+          + (previousSegment.record.NEO_Monthly_Net_Unit_Price_Primary__c * previousSegment.record.SBQQ__Quantity__c * previousSegment.record.NEO_Offset_Months__c)
+          - quoteLine.record.NEO_Subscription_ACV__c
+          - cumulativeACV;
+
+        if (segmentIndex <= 5) {
+          // Assign the calculated ACV to the appropriate field based on segmentIndex
+          quoteLine.record["NEO_Year_" + segmentIndex + "_ACV__c"] = currentACV;
+        }
+
+        // Update the cumulativeACV
+        cumulativeACV += currentACV;
       }
+    }
+
+    const lastSegment = quoteLines[quoteLines.length - 1];  // Last item in the list
+    console.log("lastSegment__amend: ", lastSegment);
+    console.log("quoteLines.length - 1__amend: ", quoteLines.length - 1);
+    if (isLastYear(lastSegment, quoteLines)) {
+      const nextSegmentIndex = lastSegment.record.SBQQ__SegmentIndex__c + 1;
+      // console.log("nextSegmentIndex__amend: ", nextSegmentIndex);
+
+      if (nextSegmentIndex <= 5) {
+        const fieldName = "NEO_Year_" + nextSegmentIndex + "_ACV__c";
+        lastSegment.record[fieldName] = (lastSegment.record.NEO_Monthly_Net_Unit_Price_Primary__c * 12 * lastSegment.record.SBQQ__Quantity__c) - lastSegment.record.NEO_Subscription_ACV__c - cumulativeACV;
+      }
+    }
 
   } catch (error) {
-      console.error('Error in calculateAmendmentACV:', error);
-      throw new Error('Error in calculateAmendmentACV: ' + error.message);
+    console.error('MVM-Error in calculateAmendmentACV:', error);
+    throw new Error('MVM-Error in calculateAmendmentACV: ' + error.message);
   }
 }
+
 
 
 //Return bool logic for HWR validation
@@ -403,7 +383,7 @@ function validateHWR(quoteModel, qlSegment, previousQuoteLine) {
     !quoteModel.record.NEO_Is_it_Power_Users__c &&
     qlSegment.record.SBQQ__Quantity__c != 0 &&
     previousQuoteLine.record.SBQQ__Quantity__c >
-      qlSegment.record.SBQQ__Quantity__c
+    qlSegment.record.SBQQ__Quantity__c
   );
 }
 
@@ -454,22 +434,22 @@ function amendmentRenewalACV(quoteModel, segmentMap) {
       if (qlSegment.record.SBQQ__SegmentIndex__c == 1) {
         segmentPartial =
           mrr *
-            qlSegment.record.SBQQ__Quantity__c *
-            (12 -
-              offsetMonths -
-              qlSegment.record.NEO_Subsequent_Segments_MRR_Additional__c) +
+          qlSegment.record.SBQQ__Quantity__c *
+          (12 -
+            offsetMonths -
+            qlSegment.record.NEO_Subsequent_Segments_MRR_Additional__c) +
           qlSegment.record.NEO_Previous_Segment_MRR__c * offsetMonths +
           nextMRR * qlSegment.record.NEO_Subsequent_Segments_MRR_Additional__c;
         finalACV =
           mrr *
-            quantity *
-            (12 -
-              offsetMonths -
-              qlSegment.record.NEO_Subsequent_Segments_MRR_Additional__c) +
+          quantity *
+          (12 -
+            offsetMonths -
+            qlSegment.record.NEO_Subsequent_Segments_MRR_Additional__c) +
           qlSegment.record.NEO_Previous_Segment_MRR__c * offsetMonths +
           nextMRR *
-            quantity *
-            qlSegment.record.NEO_Subsequent_Segments_MRR_Additional__c -
+          quantity *
+          qlSegment.record.NEO_Subsequent_Segments_MRR_Additional__c -
           qlSegment.record.NEO_Subscription_ACV__c;
       }
 
@@ -523,7 +503,7 @@ function amendmentRenewalACV(quoteModel, segmentMap) {
         (qlSegment.record.SBQQ__UpgradedSubscription__c != null &&
           qlSegment.record.SBQQ__EffectiveQuantity__c == 0) ||
         quoteModel.record.Amendment_Quote_Type__c ==
-          "Cancelled and Replaced Quote"
+        "Cancelled and Replaced Quote"
       ) {
         finalACV = 0;
       }
